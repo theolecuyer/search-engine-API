@@ -1,6 +1,6 @@
 module mvp-seachengine
 
-go 1.23.0
+go 1.22.0
 
 require (
 	github.com/Diggernaut/stopwords v0.0.0-20170220121256-d38349e58d47
