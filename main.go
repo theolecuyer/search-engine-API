@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
@@ -19,6 +20,10 @@ type SearchRequest struct {
 }
 
 func main() {
+	if err := godotenv.Load("postgres_key.env"); err != nil {
+		log.Fatalf("Error loading .env file: %v", err)
+	}
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
