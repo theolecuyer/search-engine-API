@@ -29,8 +29,8 @@ func Crawl(baseURL string, index Indexes) {
 	hostName := host.Host
 	//Read the robots.txt file if it exists
 	crawlDelay, dissalowList := loadRobots(hostName)
-	chDownload := make(chan string, 100)
-	chExtract := make(chan downloadResults, 100)
+	chDownload := make(chan string, 1000)
+	chExtract := make(chan downloadResults, 1000)
 	var mu sync.Mutex     //Make a mutex for the visited map
 	chDownload <- baseURL //Add the first url
 
