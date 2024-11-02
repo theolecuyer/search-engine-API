@@ -5,7 +5,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"sync"
 )
 
 type downloadResults struct {
@@ -13,8 +12,7 @@ type downloadResults struct {
 	data string
 }
 
-func Download(url string, chExtract chan downloadResults, wg *sync.WaitGroup) {
-	defer wg.Done()
+func Download(url string, chExtract chan downloadResults) {
 	if rsp, err := http.Get(url); err != nil {
 		log.Printf("Download returned %v", err)
 	} else {

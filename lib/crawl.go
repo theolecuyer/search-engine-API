@@ -13,7 +13,13 @@ import (
 	"github.com/kljensen/snowball"
 )
 
+type Indexes interface {
+	AddToIndex(url string, currWords []string)
+	Search(query string) hits
+}
+
 func Crawl(baseURL string, index Indexes) {
+	maxGoroutines := 20
 	visitedUrls := make(map[string]bool) //Make a map for all visited urls
 	host, err := url.Parse(baseURL)
 	if err != nil {
@@ -26,11 +32,34 @@ func Crawl(baseURL string, index Indexes) {
 	chDownload := make(chan string, 100)
 	chExtract := make(chan downloadResults, 100)
 	var mu sync.Mutex     //Make a mutex for the visited map
-	var wg sync.WaitGroup //Waitrgoup to find out when all goroutines have finished
 	chDownload <- baseURL //Add the first url
-	//Start a goroutine to manage all download results
-	go func() {
-		for currentUrl := range chDownload {
+
+	for i := 0; i < maxGoroutines; i++ {
+		go Worker(chDownload, chExtract, index, dissalowList, crawlDelay, baseURL, hostName, visitedUrls, &mu)
+	}
+
+	//Wait for intial goroutines to spin up and call others
+	time.Sleep(2 * time.Second)
+
+	//Loop to check the channel content, if they are empty close them and their goroutines will end
+	for {
+		time.Sleep(1 * time.Second)
+		if len(chDownload) == 0 && len(chExtract) == 0 {
+			break
+		}
+	}
+	close(chDownload)
+	close(chExtract)
+	fmt.Printf("All goroutines finished")
+}
+
+func Worker(chDownload chan string, chExtract chan downloadResults, index Indexes, dissalowList map[string]bool, crawlDelay float64, baseURL string, hostName string, visitedUrls map[string]bool, mu *sync.Mutex) {
+	for {
+		select {
+		case currentUrl, ok := <-chDownload:
+			if !ok {
+				return //Channel has been closed
+			}
 			allowed := true
 			for dissalowedPath := range dissalowList {
 				matched, _ := regexp.MatchString(dissalowedPath, currentUrl)
@@ -40,47 +69,34 @@ func Crawl(baseURL string, index Indexes) {
 				}
 			}
 			if allowed {
-				wg.Add(1)
-				go Download(currentUrl, chExtract, &wg)
+				Download(currentUrl, chExtract)
 				time.Sleep(time.Duration(crawlDelay) * time.Second)
 			}
-		}
-	}()
-	//Start a goroutine to manage all extract results
-	go func() {
-		for content := range chExtract {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				words, hrefs := Extract(content.data)
-				currentWords := []string{}
-				for _, word := range words {
-					if stemmedWord, err := snowball.Stem(word, "english", true); err != nil {
-						log.Printf("Snowball error: %v", err)
-					} else {
-						currentWords = append(currentWords, stemmedWord)
-					}
+		case content, ok := <-chExtract:
+			if !ok {
+				return //Channel has been closed
+			}
+			words, hrefs := Extract(content.data)
+			currentWords := []string{}
+			for _, word := range words {
+				if stemmedWord, err := snowball.Stem(word, "english", true); err != nil {
+					log.Printf("Snowball error: %v", err)
+				} else {
+					currentWords = append(currentWords, stemmedWord)
 				}
-				links := Clean(baseURL, hrefs)
-				for _, cleanedURL := range links {
-					mu.Lock()
-					if !visitedUrls[cleanedURL.String()] && hostName == cleanedURL.Host {
-						chDownload <- cleanedURL.String()
-						visitedUrls[cleanedURL.String()] = true
-					}
-					mu.Unlock()
+			}
+			links := Clean(baseURL, hrefs)
+			for _, cleanedURL := range links {
+				mu.Lock()
+				if !visitedUrls[cleanedURL.String()] && hostName == cleanedURL.Host {
+					chDownload <- cleanedURL.String()
+					visitedUrls[cleanedURL.String()] = true
 				}
-				index.AddToIndex(content.url, currentWords)
-			}()
+				mu.Unlock()
+			}
+			index.AddToIndex(content.url, currentWords)
 		}
-	}()
-
-	//Wait for intial goroutines to spin up and call others
-	time.Sleep(2 * time.Second)
-	wg.Wait()
-	close(chDownload)
-	close(chExtract)
-	fmt.Printf("All goroutines finished")
+	}
 }
 
 func loadRobots(hostName string) (float64, map[string]bool) {
