@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"log"
 	"mvp-seachengine/lib"
 	"net/http"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
 )
 
@@ -24,10 +24,25 @@ func main() {
 		port = "8080"
 	}
 
-	http.HandleFunc("/", Handler)
+	router := mux.NewRouter()
+
+	// Handle CORS in the main function
+	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Set CORS headers
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		Handler(w, r)
+	}).Methods("POST", "OPTIONS")
 
 	log.Printf("Server starting on port %s", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Fatal(http.ListenAndServe(":"+port, router))
 }
 
 func Handler(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +110,6 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		log.Fatalf("Failed to insert session: %v", err)
 	}
 	indx := lib.MakeDBIndex(db, sessionID)
-	fmt.Println(req.Website)
 	lib.Crawl(req.Website, indx)
 
 	res := lib.Indexes.Search(indx, "simple")
