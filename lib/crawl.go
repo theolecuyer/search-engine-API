@@ -35,11 +35,15 @@ func Crawl(baseURL string, index Indexes) {
 	var mu sync.Mutex     //Make a mutex for the visited map
 	chDownload <- baseURL //Add the first url
 
+	//All times to calculate avg
+	allDownloadTimes := []time.Duration{}
+	allIndexTimes := []time.Duration{}
+
 	for i := 0; i < downloadRoutines; i++ {
-		go downloadWorker(chDownload, chExtract, dissalowList, crawlDelay)
+		go downloadWorker(chDownload, chExtract, dissalowList, crawlDelay, allDownloadTimes)
 	}
 	for i := 0; i < indexRoutines; i++ {
-		go indexWorker(chDownload, chExtract, index, baseURL, hostName, visitedUrls, &mu)
+		go indexWorker(chDownload, chExtract, index, baseURL, hostName, visitedUrls, &mu, allIndexTimes)
 	}
 
 	//Wait for intial goroutines to spin up and call others
@@ -52,12 +56,25 @@ func Crawl(baseURL string, index Indexes) {
 			break
 		}
 	}
+	avgTime("download", allDownloadTimes)
+	avgTime("index", allIndexTimes)
 	close(chDownload)
 	close(chExtract)
 	fmt.Printf("All goroutines finished")
 }
 
-func downloadWorker(chDownload chan string, chExtract chan downloadResults, dissalowList map[string]bool, crawlDelay float64) {
+func avgTime(avgMessage string, timeSlice []time.Duration) {
+	var total float64
+	var amt float64
+	for _, value := range timeSlice {
+		total += value.Seconds()
+		amt += 1
+	}
+	fmt.Printf("The average time for %s is %v\n", avgMessage, (total / amt))
+}
+
+func downloadWorker(chDownload chan string, chExtract chan downloadResults, dissalowList map[string]bool, crawlDelay float64, allDownloadTimes []time.Duration) {
+	startTime := time.Now()
 	for currentUrl := range chDownload {
 		allowed := true
 		for dissalowedPath := range dissalowList {
@@ -72,9 +89,12 @@ func downloadWorker(chDownload chan string, chExtract chan downloadResults, diss
 			time.Sleep(time.Duration(crawlDelay) * time.Second)
 		}
 	}
+	allDownloadTimes = append(allDownloadTimes, time.Since(startTime))
+	fmt.Printf("Time for Download: %v\n", time.Since(startTime))
 }
 
-func indexWorker(chDownload chan string, chExtract chan downloadResults, index Indexes, baseURL string, hostName string, visitedUrls map[string]bool, mu *sync.Mutex) {
+func indexWorker(chDownload chan string, chExtract chan downloadResults, index Indexes, baseURL string, hostName string, visitedUrls map[string]bool, mu *sync.Mutex, allIndexTimes []time.Duration) {
+	startTime := time.Now()
 	for content := range chExtract {
 		words, hrefs := Extract(content.data)
 		currentWords := []string{}
@@ -96,6 +116,8 @@ func indexWorker(chDownload chan string, chExtract chan downloadResults, index I
 		}
 		index.AddToIndex(content.url, currentWords)
 	}
+	allIndexTimes = append(allIndexTimes, time.Since(startTime))
+	fmt.Printf("Time for index: %v\n", time.Since(startTime))
 }
 
 func loadRobots(hostName string) (float64, map[string]bool) {
