@@ -19,7 +19,8 @@ type Indexes interface {
 }
 
 func Crawl(baseURL string, index Indexes) {
-	maxGoroutines := 20
+	downloadRoutines := 1
+	indexRoutines := 1
 	visitedUrls := make(map[string]bool) //Make a map for all visited urls
 	host, err := url.Parse(baseURL)
 	if err != nil {
@@ -34,8 +35,11 @@ func Crawl(baseURL string, index Indexes) {
 	var mu sync.Mutex     //Make a mutex for the visited map
 	chDownload <- baseURL //Add the first url
 
-	for i := 0; i < maxGoroutines; i++ {
-		go Worker(chDownload, chExtract, index, dissalowList, crawlDelay, baseURL, hostName, visitedUrls, &mu)
+	for i := 0; i < downloadRoutines; i++ {
+		go downloadWorker(chDownload, chExtract, dissalowList, crawlDelay)
+	}
+	for i := 0; i < indexRoutines; i++ {
+		go indexWorker(chDownload, chExtract, index, baseURL, hostName, visitedUrls, &mu)
 	}
 
 	//Wait for intial goroutines to spin up and call others
@@ -53,57 +57,49 @@ func Crawl(baseURL string, index Indexes) {
 	fmt.Printf("All goroutines finished")
 }
 
-func Worker(chDownload chan string, chExtract chan downloadResults, index Indexes, dissalowList map[string]bool, crawlDelay float64, baseURL string, hostName string, visitedUrls map[string]bool, mu *sync.Mutex) {
-	for {
-		select {
-		case currentUrl, ok := <-chDownload:
-			startTime := time.Now()
-			if !ok {
-				return //Channel has been closed
+func downloadWorker(chDownload chan string, chExtract chan downloadResults, dissalowList map[string]bool, crawlDelay float64) {
+	for currentUrl := range chDownload {
+		allowed := true
+		for dissalowedPath := range dissalowList {
+			matched, _ := regexp.MatchString(dissalowedPath, currentUrl)
+			if matched {
+				allowed = false
+				break
 			}
-			allowed := true
-			for dissalowedPath := range dissalowList {
-				matched, _ := regexp.MatchString(dissalowedPath, currentUrl)
-				if matched {
-					allowed = false
-					break
-				}
-			}
-			if allowed {
-				Download(currentUrl, chExtract)
-				time.Sleep(time.Duration(crawlDelay) * time.Second)
-			}
-			fmt.Printf("Download time %v\n", time.Since(startTime))
-		case content, ok := <-chExtract:
-			startTime := time.Now()
-			if !ok {
-				return //Channel has been closed
-			}
-			words, hrefs := Extract(content.data)
-			currentWords := []string{}
-			for _, word := range words {
-				if stemmedWord, err := snowball.Stem(word, "english", true); err != nil {
-					log.Printf("Snowball error: %v", err)
-				} else {
-					currentWords = append(currentWords, stemmedWord)
-				}
-			}
-			links := Clean(baseURL, hrefs)
-			for _, cleanedURL := range links {
-				mu.Lock()
-				if !visitedUrls[cleanedURL.String()] && hostName == cleanedURL.Host {
-					chDownload <- cleanedURL.String()
-					visitedUrls[cleanedURL.String()] = true
-				}
-				mu.Unlock()
-			}
-			index.AddToIndex(content.url, currentWords)
-			fmt.Printf("Index Add time %v\n", time.Since(startTime))
+		}
+		if allowed {
+			Download(currentUrl, chExtract)
+			time.Sleep(time.Duration(crawlDelay) * time.Second)
 		}
 	}
 }
 
+func indexWorker(chDownload chan string, chExtract chan downloadResults, index Indexes, baseURL string, hostName string, visitedUrls map[string]bool, mu *sync.Mutex) {
+	for content := range chExtract {
+		words, hrefs := Extract(content.data)
+		currentWords := []string{}
+		for _, word := range words {
+			if stemmedWord, err := snowball.Stem(word, "english", true); err != nil {
+				log.Printf("Snowball error: %v", err)
+			} else {
+				currentWords = append(currentWords, stemmedWord)
+			}
+		}
+		links := Clean(baseURL, hrefs)
+		for _, cleanedURL := range links {
+			mu.Lock()
+			if !visitedUrls[cleanedURL.String()] && hostName == cleanedURL.Host {
+				chDownload <- cleanedURL.String()
+				visitedUrls[cleanedURL.String()] = true
+			}
+			mu.Unlock()
+		}
+		index.AddToIndex(content.url, currentWords)
+	}
+}
+
 func loadRobots(hostName string) (float64, map[string]bool) {
+	//Set the default crawl delay as 100 ms
 	var crawlDelay float64 = 0.1
 	robotsUrl := "http://" + hostName + "/robots.txt"
 	dissalowList := make(map[string]bool)
