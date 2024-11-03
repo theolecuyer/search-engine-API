@@ -2,6 +2,7 @@ package lib
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"sort"
 
@@ -46,6 +47,7 @@ func MakeDBIndex(db *sql.DB, sessionID string) *DatabaseIndex {
 }
 
 func (d *DatabaseIndex) AddToIndex(url string, currWords []string) {
+	fmt.Printf("Adding to index %s\n", url)
 	//Use transactions to batch apply queries to the db
 	tx, err := d.db.Begin()
 	if err != nil {
