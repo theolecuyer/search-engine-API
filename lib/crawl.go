@@ -57,6 +57,7 @@ func Worker(chDownload chan string, chExtract chan downloadResults, index Indexe
 	for {
 		select {
 		case currentUrl, ok := <-chDownload:
+			startTime := time.Now()
 			if !ok {
 				return //Channel has been closed
 			}
@@ -72,7 +73,9 @@ func Worker(chDownload chan string, chExtract chan downloadResults, index Indexe
 				Download(currentUrl, chExtract)
 				time.Sleep(time.Duration(crawlDelay) * time.Second)
 			}
+			fmt.Printf("Download time %v\n", time.Since(startTime))
 		case content, ok := <-chExtract:
+			startTime := time.Now()
 			if !ok {
 				return //Channel has been closed
 			}
@@ -95,6 +98,7 @@ func Worker(chDownload chan string, chExtract chan downloadResults, index Indexe
 				mu.Unlock()
 			}
 			index.AddToIndex(content.url, currentWords)
+			fmt.Printf("Index Add time %v\n", time.Since(startTime))
 		}
 	}
 }
