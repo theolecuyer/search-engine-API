@@ -61,10 +61,10 @@ func avgTime(avgMessage string, times []time.Duration) {
 	var total float64
 	var amt float64
 	for _, value := range times {
-		total += value.Seconds()
+		total += float64(value.Milliseconds())
 		amt += 1
 	}
-	fmt.Printf("The average time for %s is %v\n", avgMessage, (total / amt))
+	fmt.Printf("The average time for %s is %vms\n", avgMessage, (total / amt))
 }
 
 func downloadWorker(chDownload chan string, chExtract chan downloadResults, dissalowList map[string]bool, crawlDelay float64) {
@@ -84,7 +84,6 @@ func downloadWorker(chDownload chan string, chExtract chan downloadResults, diss
 			time.Sleep(time.Duration(crawlDelay) * time.Second)
 		}
 		allDownloadTimes = append(allDownloadTimes, time.Since(startTime))
-		fmt.Printf("Time for Download: %v\n", time.Since(startTime))
 	}
 	avgTime("Download", allDownloadTimes)
 }
@@ -112,7 +111,6 @@ func indexWorker(chDownload chan string, chExtract chan downloadResults, index I
 			mu.Unlock()
 		}
 		allIndexTimes = append(allIndexTimes, time.Since(startTime))
-		fmt.Printf("Time for index: %v\n", time.Since(startTime))
 		index.AddToIndex(content.url, currentWords)
 	}
 	avgTime("Index", allIndexTimes)
