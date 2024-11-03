@@ -36,8 +36,23 @@ func Crawl(baseURL string, index Indexes) {
 	chDownload <- baseURL //Add the first url
 
 	//All times to calculate avg
-	allDownloadTimes := make(chan time.Duration, 10000)
-	allIndexTimes := make(chan time.Duration, 10000)
+	allDownloadSlice := []time.Duration{}
+	allIndexSlice := []time.Duration{}
+	allDownloadTimes := make(chan time.Duration, 1000)
+	allIndexTimes := make(chan time.Duration, 1000)
+
+	//Goroutines to add all time channel values to the slices
+	go func() {
+		for currTime := range allIndexTimes {
+			allIndexSlice = append(allIndexSlice, currTime)
+		}
+	}()
+
+	go func() {
+		for currTime := range allDownloadTimes {
+			allDownloadSlice = append(allDownloadSlice, currTime)
+		}
+	}()
 
 	for i := 0; i < downloadRoutines; i++ {
 		go downloadWorker(chDownload, chExtract, dissalowList, crawlDelay, allDownloadTimes)
@@ -49,24 +64,6 @@ func Crawl(baseURL string, index Indexes) {
 	//Wait for intial goroutines to spin up and call others
 	time.Sleep(2 * time.Second)
 
-	go func() {
-		for {
-			if len(allDownloadTimes) == 0 {
-				close(allDownloadTimes)
-				break
-			}
-		}
-	}()
-
-	go func() {
-		for {
-			if len(allIndexTimes) == 0 {
-				close(allIndexTimes)
-				break
-			}
-		}
-	}()
-
 	//Loop to check the channel content, if they are empty close them and their goroutines will end
 	for {
 		time.Sleep(1 * time.Second)
@@ -74,17 +71,19 @@ func Crawl(baseURL string, index Indexes) {
 			break
 		}
 	}
-	avgTime("download", allDownloadTimes)
-	avgTime("index", allIndexTimes)
+	avgTime("download", allDownloadSlice)
+	avgTime("index", allIndexSlice)
+	close(allDownloadTimes)
+	close(allIndexTimes)
 	close(chDownload)
 	close(chExtract)
 	fmt.Printf("All goroutines finished")
 }
 
-func avgTime(avgMessage string, timeChan chan time.Duration) {
+func avgTime(avgMessage string, times []time.Duration) {
 	var total float64
 	var amt float64
-	for value := range timeChan {
+	for _, value := range times {
 		total += value.Seconds()
 		amt += 1
 	}
