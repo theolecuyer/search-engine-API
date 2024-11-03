@@ -91,8 +91,8 @@ func avgTime(avgMessage string, times []time.Duration) {
 }
 
 func downloadWorker(chDownload chan string, chExtract chan downloadResults, dissalowList map[string]bool, crawlDelay float64, allDownloadTimes chan time.Duration) {
-	startTime := time.Now()
 	for currentUrl := range chDownload {
+		startTime := time.Now()
 		allowed := true
 		for dissalowedPath := range dissalowList {
 			matched, _ := regexp.MatchString(dissalowedPath, currentUrl)
@@ -105,14 +105,15 @@ func downloadWorker(chDownload chan string, chExtract chan downloadResults, diss
 			Download(currentUrl, chExtract)
 			time.Sleep(time.Duration(crawlDelay) * time.Second)
 		}
+		allDownloadTimes <- time.Since(startTime)
+		fmt.Printf("Time for Download: %v\n", time.Since(startTime))
 	}
-	allDownloadTimes <- time.Since(startTime)
-	fmt.Printf("Time for Download: %v\n", time.Since(startTime))
+
 }
 
 func indexWorker(chDownload chan string, chExtract chan downloadResults, index Indexes, baseURL string, hostName string, visitedUrls map[string]bool, mu *sync.Mutex, allIndexTimes chan time.Duration) {
-	startTime := time.Now()
 	for content := range chExtract {
+		startTime := time.Now()
 		words, hrefs := Extract(content.data)
 		currentWords := []string{}
 		for _, word := range words {
@@ -131,10 +132,10 @@ func indexWorker(chDownload chan string, chExtract chan downloadResults, index I
 			}
 			mu.Unlock()
 		}
+		allIndexTimes <- time.Since(startTime)
+		fmt.Printf("Time for index: %v\n", time.Since(startTime))
 		index.AddToIndex(content.url, currentWords)
 	}
-	allIndexTimes <- time.Since(startTime)
-	fmt.Printf("Time for index: %v\n", time.Since(startTime))
 }
 
 func loadRobots(hostName string) (float64, map[string]bool) {
