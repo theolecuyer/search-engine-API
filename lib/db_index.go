@@ -45,6 +45,7 @@ func MakeDBIndex(db *sql.DB, sessionID string) *DatabaseIndex {
 		getURLStmt:          getURLStmt,
 		getURLWordCountStmt: getURLWordCountStmt,
 		getWordFreqStmt:     getWordFreqStmt,
+		mu:                  &sync.Mutex{},
 	}
 }
 
