@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"sync"
 
 	"github.com/kljensen/snowball"
 	_ "github.com/lib/pq"
@@ -20,6 +21,7 @@ type DatabaseIndex struct {
 	getURLStmt          *sql.Stmt
 	getURLWordCountStmt *sql.Stmt
 	getWordFreqStmt     *sql.Stmt
+	mu                  *sync.Mutex
 }
 
 func MakeDBIndex(db *sql.DB, sessionID string) *DatabaseIndex {
@@ -47,6 +49,8 @@ func MakeDBIndex(db *sql.DB, sessionID string) *DatabaseIndex {
 }
 
 func (d *DatabaseIndex) AddToIndex(url string, currWords []string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	fmt.Printf("Adding to index %s\n", url)
 	//Use transactions to batch apply queries to the db
 	tx, err := d.db.Begin()
