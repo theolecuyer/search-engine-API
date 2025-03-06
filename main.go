@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"mvp-seachengine/lib"
 	"net/http"
@@ -25,6 +26,7 @@ func main() {
 	}
 
 	port := os.Getenv("PORT")
+	fmt.Println(port)
 	if port == "" {
 		port = "8080"
 	}
