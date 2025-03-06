@@ -13,7 +13,6 @@ import (
 
 type DatabaseIndex struct {
 	db                  *sql.DB
-	sessionID           string
 	insertURLStmt       *sql.Stmt
 	insertWordStmt      *sql.Stmt
 	insertFreqStmt      *sql.Stmt
@@ -24,20 +23,19 @@ type DatabaseIndex struct {
 	mu                  *sync.Mutex
 }
 
-func MakeDBIndex(db *sql.DB, sessionID string) *DatabaseIndex {
+func MakeDBIndex(db *sql.DB) *DatabaseIndex {
 	//Insert statements
-	insertURLStmt := prepare(db, `INSERT INTO urls (url, word_count, session_id) VALUES ($1, $2, $3) ON CONFLICT (url, session_id) DO NOTHING RETURNING id`)
-	insertWordStmt := prepare(db, `INSERT INTO words (word, session_id) VALUES ($1, $2) ON CONFLICT (word, session_id) DO NOTHING RETURNING id`)
+	insertURLStmt := prepare(db, `INSERT INTO urls (url, word_count) VALUES ($1, $2) ON CONFLICT (url) DO NOTHING RETURNING id`)
+	insertWordStmt := prepare(db, `INSERT INTO words (word) VALUES ($1, $2) ON CONFLICT (word) DO NOTHING RETURNING id`)
 	insertFreqStmt := prepare(db, `INSERT INTO mapping (word_id, url_id, frequency) VALUES ($1, $2, 1) ON CONFLICT (word_id, url_id) DO UPDATE SET frequency = mapping.frequency + 1`)
 
 	//Queries
-	getWordIDStmt := prepare(db, `SELECT id FROM words WHERE word = $1 AND session_id = $2`)
-	getURLStmt := prepare(db, `SELECT url FROM urls WHERE id = $1 AND session_id = $2`)
-	getURLWordCountStmt := prepare(db, `SELECT word_count FROM urls WHERE id = $1 AND session_id = $2`)
+	getWordIDStmt := prepare(db, `SELECT id FROM words WHERE word = $1`)
+	getURLStmt := prepare(db, `SELECT url FROM urls WHERE id = $1`)
+	getURLWordCountStmt := prepare(db, `SELECT word_count FROM urls WHERE id = $1`)
 	getWordFreqStmt := prepare(db, `SELECT url_id, frequency FROM mapping WHERE word_id = $1`)
 	return &DatabaseIndex{
 		db:                  db,
-		sessionID:           sessionID,
 		insertURLStmt:       insertURLStmt,
 		insertWordStmt:      insertWordStmt,
 		insertFreqStmt:      insertFreqStmt,
@@ -72,10 +70,10 @@ func (d *DatabaseIndex) AddToIndex(url string, currWords []string) {
 	}()
 
 	var urlID int64
-	err = tx.Stmt(d.insertURLStmt).QueryRow(url, len(currWords), d.sessionID).Scan(&urlID)
+	err = tx.Stmt(d.insertURLStmt).QueryRow(url, len(currWords)).Scan(&urlID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			err = tx.QueryRow("SELECT id FROM urls WHERE url = $1 AND session_id = $2", url, d.sessionID).Scan(&urlID)
+			err = tx.QueryRow("SELECT id FROM urls WHERE url = $1", url).Scan(&urlID)
 			if err != nil {
 				log.Printf("Failed to get existing URL ID: %v\n", err)
 				return
@@ -88,10 +86,10 @@ func (d *DatabaseIndex) AddToIndex(url string, currWords []string) {
 
 	for _, word := range currWords {
 		var wordID int64
-		err = tx.Stmt(d.insertWordStmt).QueryRow(word, d.sessionID).Scan(&wordID)
+		err = tx.Stmt(d.insertWordStmt).QueryRow(word).Scan(&wordID)
 		if err != nil {
 			if err == sql.ErrNoRows {
-				err = tx.Stmt(d.getWordIDStmt).QueryRow(word, d.sessionID).Scan(&wordID)
+				err = tx.Stmt(d.getWordIDStmt).QueryRow(word).Scan(&wordID)
 				if err != nil {
 					log.Printf("Failed to get existing word ID: %v\n", err)
 					return
@@ -128,12 +126,10 @@ func (d *DatabaseIndex) Search(query string) hits {
 			if err != nil {
 				log.Printf("Failed to scan row %v\n", err)
 			}
-			if d.isURLInSession(urlID) {
-				resultUrl[urlID] = wordFreq
-			}
+			resultUrl[urlID] = wordFreq
 		}
 
-		row := d.db.QueryRow("SELECT COUNT(*) FROM urls WHERE session_id = $1", d.sessionID)
+		row := d.db.QueryRow("SELECT COUNT(*) FROM urls")
 		var totalDocCount int
 		if err := row.Scan(&totalDocCount); err != nil {
 			log.Printf("Error counting rows: %v", err)
@@ -150,16 +146,6 @@ func (d *DatabaseIndex) Search(query string) hits {
 	return results
 }
 
-func (d *DatabaseIndex) isURLInSession(urlID int) bool {
-	var count int
-	err := d.db.QueryRow("SELECT COUNT(*) FROM urls WHERE id = $1 AND session_id = $2", urlID, d.sessionID).Scan(&count)
-	if err != nil {
-		log.Printf("Error checking URL in session: %v", err)
-		return false
-	}
-	return count > 0
-}
-
 func prepare(db *sql.DB, statement string) *sql.Stmt {
 	stmt, err := db.Prepare(statement)
 	if err != nil {
@@ -170,7 +156,7 @@ func prepare(db *sql.DB, statement string) *sql.Stmt {
 
 func (d *DatabaseIndex) getWordID(word string) int {
 	var wordID int
-	err := d.getWordIDStmt.QueryRow(word, d.sessionID).Scan(&wordID)
+	err := d.getWordIDStmt.QueryRow(word).Scan(&wordID)
 	if err != nil {
 		log.Printf("Lookup for %s returned %v\n", word, err)
 	}
@@ -179,7 +165,7 @@ func (d *DatabaseIndex) getWordID(word string) int {
 
 func (d *DatabaseIndex) getURL(urlID int) string {
 	var url string
-	err := d.getURLStmt.QueryRow(urlID, d.sessionID).Scan(&url)
+	err := d.getURLStmt.QueryRow(urlID).Scan(&url)
 	if err != nil {
 		log.Printf("Lookup for URL ID %d returned %v\n", urlID, err)
 	}
@@ -188,7 +174,7 @@ func (d *DatabaseIndex) getURL(urlID int) string {
 
 func (d *DatabaseIndex) getURLWordCount(urlID int) int {
 	var wordCount int
-	err := d.getURLWordCountStmt.QueryRow(urlID, d.sessionID).Scan(&wordCount)
+	err := d.getURLWordCountStmt.QueryRow(urlID).Scan(&wordCount)
 	if err != nil {
 		log.Printf("Lookup for URL ID %d returned %v\n", urlID, err)
 	}

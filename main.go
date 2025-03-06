@@ -16,7 +16,7 @@ import (
 )
 
 type SearchRequest struct {
-	Website string `json:"website"`
+	SearchTerm string `json:"search_term"`
 }
 
 func main() {
@@ -42,15 +42,44 @@ func main() {
 			return
 		}
 
-		Handler(w, r)
+		HandleSearch(w, r)
 	}).Methods("POST", "OPTIONS")
 
 	log.Printf("Server starting on port %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, router))
 }
 
+func HandleSearch(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Searching")
+	var req SearchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	log.Printf(req.SearchTerm)
+
+	dbURL := os.Getenv("POSTGRES_URL")
+	if dbURL == "" {
+		log.Fatal("No POSTGRES_URL environment variable")
+	}
+	//Open the database
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer db.Close() //Close the db once out of scope
+	indx := lib.MakeDBIndex(db)
+	res := lib.Indexes.Search(indx, "simple")
+	var urls []string
+	for _, result := range res {
+		urls = append(urls, result.URL)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(urls)
+}
+
 func Handler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Called")
+	log.Printf("Crawling")
 
 	var req SearchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -73,25 +102,17 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tables := []string{
-		`CREATE TABLE IF NOT EXISTS sessions (
-			session_id UUID PRIMARY KEY,
-			created_at TIMESTAMP DEFAULT NOW(),
-			expires_at TIMESTAMP NOT NULL
-		);`,
 		`CREATE TABLE IF NOT EXISTS urls (
 		id SERIAL PRIMARY KEY,
 		url TEXT NOT NULL,
 		word_count INTEGER NOT NULL,
 		session_id UUID NOT NULL,
-		FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE,
-		UNIQUE (url, session_id)
+		UNIQUE (url)
 	);`,
 		`CREATE TABLE IF NOT EXISTS words (
 		id SERIAL PRIMARY KEY,
 		word TEXT NOT NULL,
-		session_id UUID NOT NULL,
-		FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE,
-		UNIQUE (word, session_id)
+		UNIQUE (word)
 	);`,
 		`CREATE TABLE IF NOT EXISTS mapping (
 		word_id INTEGER,
@@ -113,8 +134,8 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	); err != nil {
 		log.Fatalf("Failed to insert session: %v", err)
 	}
-	indx := lib.MakeDBIndex(db, sessionID)
-	lib.Crawl(req.Website, indx)
+	indx := lib.MakeDBIndex(db)
+	lib.Crawl(req.SearchTerm, indx)
 
 	res := lib.Indexes.Search(indx, "simple")
 	var urls []string
