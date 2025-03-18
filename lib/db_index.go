@@ -26,7 +26,7 @@ type DatabaseIndex struct {
 func MakeDBIndex(db *sql.DB) *DatabaseIndex {
 	//Insert statements
 	insertURLStmt := prepare(db, `INSERT INTO urls (url, word_count) VALUES ($1, $2) ON CONFLICT (url) DO NOTHING RETURNING id`)
-	insertWordStmt := prepare(db, `INSERT INTO words (word) VALUES ($1, $2) ON CONFLICT (word) DO NOTHING RETURNING id`)
+	insertWordStmt := prepare(db, `INSERT INTO words (word) VALUES ($1) ON CONFLICT (word) DO NOTHING RETURNING id`)
 	insertFreqStmt := prepare(db, `INSERT INTO mapping (word_id, url_id, frequency) VALUES ($1, $2, 1) ON CONFLICT (word_id, url_id) DO UPDATE SET frequency = mapping.frequency + 1`)
 
 	//Queries
