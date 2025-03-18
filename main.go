@@ -33,14 +33,8 @@ func main() {
 
 	router := mux.NewRouter()
 
-	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println("Health Check")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-		w.WriteHeader(http.StatusOK)
-	}).Methods("GET")
+	router.HandleFunc("/health", func(http.ResponseWriter, *http.Request) {}).
+		Methods(http.MethodGet)
 
 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("Handle Pinged")
