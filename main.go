@@ -74,7 +74,7 @@ func HandleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close() //Close the db once out of scope
 	indx := lib.MakeDBIndex(db)
-	res := lib.Indexes.Search(indx, "simple")
+	res := lib.Indexes.Search(indx, req.SearchTerm)
 	var urls []string
 	for _, result := range res {
 		urls = append(urls, result.URL)
