@@ -33,6 +33,16 @@ func main() {
 
 	router := mux.NewRouter()
 
+	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println("Health Check")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	}).Methods("GET")
+
 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("Handle Pinged")
 		//Set CORS headers
@@ -60,7 +70,6 @@ func HandleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf(req.SearchTerm)
-
 	dbURL := os.Getenv("POSTGRES_URL")
 	if dbURL == "" {
 		log.Fatal("No POSTGRES_URL environment variable")
