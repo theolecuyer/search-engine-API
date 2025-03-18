@@ -40,7 +40,6 @@ func main() {
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
 	}).Methods("GET")
 
 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
