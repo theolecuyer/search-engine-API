@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/kljensen/snowball"
@@ -109,41 +110,66 @@ func (d *DatabaseIndex) AddToIndex(url string, currWords []string) {
 }
 
 func (d *DatabaseIndex) Search(query string) hits {
-	results := hits{}
-	if stemmedWordQuery, err := snowball.Stem(query, "english", true); err == nil {
-		wordId := d.getWordID(stemmedWordQuery)
-		rows, err := d.getWordFreqStmt.Query(wordId)
-		if err != nil {
-			log.Panicf("Lookup word freq returned %v\n", err)
-		}
-		defer rows.Close()
+	allResults := []hits{}
+	words := strings.Fields(query)
 
-		resultUrl := make(map[int]int)
-		for rows.Next() {
-			var wordFreq int
-			var urlID int
-			err := rows.Scan(&urlID, &wordFreq)
+	for _, word := range words {
+		if stemmedWordQuery, err := snowball.Stem(word, "english", true); err == nil {
+			wordId := d.getWordID(stemmedWordQuery)
+			rows, err := d.getWordFreqStmt.Query(wordId)
 			if err != nil {
-				log.Printf("Failed to scan row %v\n", err)
+				log.Panicf("Lookup word freq returned %v\n", err)
 			}
-			resultUrl[urlID] = wordFreq
-		}
+			defer rows.Close()
 
-		row := d.db.QueryRow("SELECT COUNT(*) FROM urls")
-		var totalDocCount int
-		if err := row.Scan(&totalDocCount); err != nil {
-			log.Printf("Error counting rows: %v", err)
-		}
+			resultUrl := make(map[int]int)
+			for rows.Next() {
+				var wordFreq int
+				var urlID int
+				err := rows.Scan(&urlID, &wordFreq)
+				if err != nil {
+					log.Printf("Failed to scan row %v\n", err)
+				}
+				resultUrl[urlID] = wordFreq
+			}
 
-		for url, frequency := range resultUrl {
-			currURL := d.getURL(url)
-			docLen := d.getURLWordCount(url)
-			tfIDFScore := TfIDF(frequency, docLen, totalDocCount, len(resultUrl))
-			results = append(results, searchHit{currURL, frequency, tfIDFScore})
+			row := d.db.QueryRow("SELECT COUNT(*) FROM urls")
+			var totalDocCount int
+			if err := row.Scan(&totalDocCount); err != nil {
+				log.Printf("Error counting rows: %v", err)
+			}
+
+			wordHits := hits{}
+			for url, frequency := range resultUrl {
+				currURL := d.getURL(url)
+				docLen := d.getURLWordCount(url)
+				tfIDFScore := TfIDF(frequency, docLen, totalDocCount, len(resultUrl))
+				wordHits = append(wordHits, searchHit{currURL, frequency, tfIDFScore})
+			}
+			allResults = append(allResults, wordHits)
 		}
 	}
-	sort.Sort(results)
-	return results
+	finalResult := hits{}
+	urlsCount := make(map[string]int)
+
+	//Count the occurences of each URL in all search hits
+	for _, hits := range allResults {
+		for _, hit := range hits {
+			urlsCount[hit.URL]++
+		}
+	}
+	//Go through all results and only add ones that are present in all to final hits
+	added := make(map[string]bool) //Tracks which have been added to final results
+	for _, hits := range allResults {
+		for _, hit := range hits {
+			if urlsCount[hit.URL] == len(allResults) && !added[hit.URL] {
+				finalResult = append(finalResult, hit)
+				added[hit.URL] = true
+			}
+		}
+	}
+	sort.Sort(finalResult)
+	return finalResult
 }
 
 func prepare(db *sql.DB, statement string) *sql.Stmt {
