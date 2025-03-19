@@ -110,10 +110,12 @@ func (d *DatabaseIndex) AddToIndex(url string, currWords []string) {
 }
 
 func (d *DatabaseIndex) Search(query string) hits {
-	allResults := []hits{}
+	results := hits{}
 	words := strings.Fields(query)
+	urlCounts := make(map[string]int)
+	added := make(map[string]bool)
 
-	for _, word := range words {
+	for i, word := range words {
 		if stemmedWordQuery, err := snowball.Stem(word, "english", true); err == nil {
 			wordId := d.getWordID(stemmedWordQuery)
 			rows, err := d.getWordFreqStmt.Query(wordId)
@@ -139,37 +141,46 @@ func (d *DatabaseIndex) Search(query string) hits {
 				log.Printf("Error counting rows: %v", err)
 			}
 
-			wordHits := hits{}
 			for url, frequency := range resultUrl {
 				currURL := d.getURL(url)
-				docLen := d.getURLWordCount(url)
-				tfIDFScore := TfIDF(frequency, docLen, totalDocCount, len(resultUrl))
-				wordHits = append(wordHits, searchHit{currURL, frequency, tfIDFScore})
+				if i == 0 || urlCounts[currURL] == i {
+					urlCounts[currURL]++
+					docLen := d.getURLWordCount(url)
+					tfIDFScore := TfIDF(frequency, docLen, totalDocCount, len(resultUrl))
+					if !added[currURL] {
+						results = append(results, searchHit{currURL, frequency, tfIDFScore})
+					} else {
+						results = updateTFIDF(results, currURL, tfIDFScore)
+					}
+				} else if i != 0 {
+					results = removeURLFromResults(results, currURL)
+				}
 			}
-			allResults = append(allResults, wordHits)
 		}
 	}
-	finalResult := hits{}
-	urlsCount := make(map[string]int)
+	sort.Sort(results)
+	return results
+}
 
-	//Count the occurences of each URL in all search hits
-	for _, hits := range allResults {
-		for _, hit := range hits {
-			urlsCount[hit.URL]++
+func removeURLFromResults(results hits, urlToRemove string) hits {
+	var filteredResults hits
+	for _, hit := range results {
+		if hit.URL != urlToRemove {
+			filteredResults = append(filteredResults, hit)
 		}
 	}
-	//Go through all results and only add ones that are present in all to final hits
-	added := make(map[string]bool) //Tracks which have been added to final results
-	for _, hits := range allResults {
-		for _, hit := range hits {
-			if urlsCount[hit.URL] == len(allResults) && !added[hit.URL] {
-				finalResult = append(finalResult, hit)
-				added[hit.URL] = true
-			}
+	return filteredResults
+}
+
+func updateTFIDF(results hits, url string, newTFIDF float64) hits {
+	newResults := make(hits, len(results))
+	copy(newResults, results)
+	for i, hit := range results {
+		if hit.URL == url {
+			newResults[i].tfIDF += newTFIDF
 		}
 	}
-	sort.Sort(finalResult)
-	return finalResult
+	return newResults
 }
 
 func prepare(db *sql.DB, statement string) *sql.Stmt {
