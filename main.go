@@ -61,7 +61,7 @@ func main() {
 
 func HandleAuth(w http.ResponseWriter, r *http.Request) bool {
 	expectedKey := os.Getenv("API_KEY") //Api key for authentication
-	gotKey := r.Header.Get("API-KEY")
+	gotKey := r.Header.Get("Authorization")
 	return gotKey == expectedKey
 }
 
