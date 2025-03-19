@@ -21,7 +21,7 @@ type SearchRequest struct {
 }
 
 func main() {
-	if err := godotenv.Load("postgres_key.env"); err != nil {
+	if err := godotenv.Load("api_keys.env"); err != nil {
 		log.Fatalf("Error loading .env file: %v", err)
 	}
 
@@ -47,12 +47,22 @@ func main() {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
+		if authorized := HandleAuth(w, r); authorized {
+			HandleSearch(w, r)
+		} else {
+			http.Error(w, "Unauthorized to access api", http.StatusUnauthorized)
+		}
 
-		HandleSearch(w, r)
 	}).Methods("POST", "OPTIONS")
 
 	log.Printf("Server starting on port %s", port)
 	log.Fatal(http.ListenAndServe(":"+port, router))
+}
+
+func HandleAuth(w http.ResponseWriter, r *http.Request) bool {
+	expectedKey := os.Getenv("API_KEY") //Api key for authentication
+	gotKey := r.Header.Get("API-KEY")
+	return gotKey == expectedKey
 }
 
 func HandleSearch(w http.ResponseWriter, r *http.Request) {
