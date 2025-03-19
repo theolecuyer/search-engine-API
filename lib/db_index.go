@@ -112,6 +112,7 @@ func (d *DatabaseIndex) AddToIndex(url string, currWords []string) {
 func (d *DatabaseIndex) Search(query string) hits {
 	results := hits{}
 	words := strings.Fields(query)
+	urlsToKeep := make(map[string]bool)
 	urlCounts := make(map[string]int)
 	added := make(map[string]bool)
 
@@ -152,24 +153,22 @@ func (d *DatabaseIndex) Search(query string) hits {
 					} else {
 						results = updateTFIDF(results, currURL, tfIDFScore)
 					}
-				} else if i != 0 {
-					results = removeURLFromResults(results, currURL)
+					urlsToKeep[currURL] = true
+				} else {
+					urlsToKeep[currURL] = false
 				}
 			}
 		}
 	}
-	sort.Sort(results)
-	return results
-}
-
-func removeURLFromResults(results hits, urlToRemove string) hits {
-	var filteredResults hits
+	finalResults := hits{}
 	for _, hit := range results {
-		if hit.URL != urlToRemove {
-			filteredResults = append(filteredResults, hit)
+		if urlsToKeep[hit.URL] {
+			finalResults = append(finalResults, hit)
 		}
 	}
-	return filteredResults
+	results = finalResults
+	sort.Sort(results)
+	return results
 }
 
 func updateTFIDF(results hits, url string, newTFIDF float64) hits {
